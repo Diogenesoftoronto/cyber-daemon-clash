@@ -13,12 +13,12 @@ To load and run Cyber Daemon Clash powered by the Trail game project in Common L
 
 3. **Load Your Project**: In the same REPL session, navigate to your project directory and load the system:
    ```lisp
-   (load "my-project.asd")
-   (asdf:load-system :my-project)
+   (load "cyber-daemon-clash.asd")
+   (asdf:load-system :cyber-daemon-clash)
    ```
 
 4. **Launch the Game**: Finally, run the `launch` function to start your game:
    ```lisp
-   (org.my.project:launch)
+   (org.cyber-daemon-clash:launch)
    ```
 At some point there will be a setup script so that you do not have to do this manually much like [kandria](https://www.github.com/shirakumo/kandria).
