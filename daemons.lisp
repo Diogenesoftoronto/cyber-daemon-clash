@@ -1,0 +1,15 @@
+;; This is going to hold our daemons
+(
+ (define-daemon malbolge (vertex-entity)
+   ((:hide ()
+     :spawn ()
+     :ping ()
+     :message ())
+    (vertex-array :initform (// 'trial 'unit-disc))))
+ (define-daemon buer (vertex-entity)
+   (:find ()
+    :message ()
+    :sleep ())
+   (vertex-array :initform (// 'trial 'unit-square))
+   )
+)
