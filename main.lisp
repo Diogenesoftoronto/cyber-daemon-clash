@@ -45,9 +45,21 @@
   (ensure-directories-exist path) (save-mapping path))
 
 
-
 (define-event daemon-died (event))
-(setf +daemons-list+ (list))
+
+;; This really will need to be a macro i think because i need to
+;; specify a particular daemon in the daemon pool in order to construct them
+;; dynamically... I think maybe i could use a struct and constructor for them?
+;; daemons should have some initialization standards, for example sometype
+;; of indeterminate location, and resource contraints.
+;; Definining constriants will be difficult. The daemon should also have
+;; a set of base behaviours that are available to take.  
+(define-shader-entity daemon (animated-sprite transformed-entity
+  collision-body listener)
+  (daemon-list :default-initarg 'daemon-list :daemon-list (list)))
+
+(defvar *daemons-list* (list (make-instance 'daemon)))
+(setf +daemons-list+ (list (make-instance 'daemon)))
 ;; I need to make sure that there is
 ;; actually daemon-sprite.json file in the data/.  
 (define-asset (daemonbench sprite) sprite-data #p"daemon-sprite.png")
@@ -63,27 +75,17 @@
   (directional-action daemon-set)) 
 (define-action ping (daemon-set))
 (define-action spawn (daemon-set))
-;; This really will need to be a macro i think because i need to
-;; specify a particular daemon in the daemon pool in order to construct them
-;; dynamically... I think maybe i could use a struct and constructor for them?
-(define-shader-entity daemon (animated-sprite transformed-entity
-  collision-body listener)
-  (daemon-list :default-initarg :daemon-list (list)))
-;; daemons should have some initialization standards, for example sometype
-;; of indeterminate location, and resource contraints.
-;; Definining constriants will be difficult. The daemon should also have
-;; a set of base behaviours that are available to take.  
+
 
 ;; Test daemon inherits methods of a-daemon
 (define-shader-entity test-daemon (vertex-entity daemon)
-  
-  (:default-initargs :sprite-data (asset 'daemonbench 'daemon))) 
+  (:default-initargs 'sprite-data (asset 'daemonbench 'daemon))) 
 
-(setf +broadcasted-daemons+ '()) ;; broadcasted daemons are ones that are visible to all
+(defvar *broadcasted-daemons*) ;; broadcasted daemons are ones that are visible to all
 ;; daemons, when you ping you are added to the broadcasted daemons.
 
 ;; 
-(defun extend-list-with-entry (obj place accessor)
+(defmethod extend-list-with-entry (obj place (accessor daemon))
   (let
       ((accessed (getf place accessor)))
     (push obj accessed)))
@@ -100,51 +102,55 @@
 (defun not-nil? (q &optional p &rest args) (not (nil? q p args)))
 
 ;; This function must do resource constraint checking, if resource are out then this should immediately stop.
-(defun send-message (sender sendee message &rest messages &key accessor &allow-other-keys)
+;; The Accessor is usually thought of as the daemon class, there is potential to turn this into a defmethod, but for now, a function is sufficient.
+(defmethod send-message (sender sendee message &rest messages &key accessor &allow-other-keys)
   (cond
-    ((nil? message (car messages) (cdr messages)) ;; both NIL?
-     (loop for m in messages do (send-message sender sendee m)))  
-    ((not-nil? message (car messages) (cdr messages))
-     (send-message sender sendee message)
-     (loop for m in message do (send-message sender sendee m))) ;; [cond form 1]
     ((equal message 'ping) ;; condition
      (send-message sendee sender 'pong) ;; action 'clauses'...
-     (extend-list-with-entry sendee sender accessor))
-    ((equal message 'pong)
-     (extend-list-with-entry sendee sender accessor))
-    ((not message)
-     (send-message sender sendee message))))
+      (extend-list-with-entry sendee sender accessor))  
+     ((equal message 'pong)
+     (extend-list-with-entry sender sendee accessor)))
+  (loop for m in messages do (setf accessor message)))
 
 ;; In addition, to adding messages to the daemon-list of the accessor, process-message should also do some work with the messages
 ;; i.e. process-message should PARSE the messages and then do actions or behaviours based on them, this may be possible
 ;; via a passed in parse function. NOTE: One thing to remember is that send-message and process-message should be given their
 ;; accessors otherwise they cannot extend their lists with the extender, WARNING: current implementation will result in infinite recursion.
 ;; This function must do resource constraint checking, if resource are out then this should immediately stop.
-(defun process-message (reciever recievee message &rest messages &key accessor parser &allow-other-keys)
-  (cond
-    ((nil? message (car messages) (cdr messages)) ;; both NIL?
-     (loop for m in messages do (process-message reciever recievee m)))  
-    ((not-nil? message (car messages) (cdr messages))
-     (process-message reciever recievee message)
-     (loop for m in message do (process-message reciever recievee m))) ;; [cond form 1]
-    ((equal message 'ping) ;; condition
-     (process-message recievee reciever 'pong) ;; action 'clauses'...
-     (extend-list-with-entry recievee reciever accessor))
-    ((equal message 'pong)
-     (extend-list-with-entry recievee reciever accessor))
-    ((not message)
-     (process-message reciever recievee message))))
+;; Another thing to consider, perhaps currying would be useful for this function, it could simplify the amount of code here and preserve a sort of state of messages.
+(defmethod process-message ((accessor daemon) processor &rest messages)
+  (loop for message in messages do (processor accessor message)))
 
-(define-handler (setf daemon-list)
-    ()) ;; filter from the global daemons, a list of daemons that have been pinged/sent orrecieved messages to/from this daemon.
+(defmethod processor ((mutator daemon) message)
+  (when (check-constriants mutator)
+  (princ message))) ;; the base processor should print the message 
+
+
+(defparameter *memory-constraints* 1024) ;; in kb
+(defparameter *cpu-constraints* 2)
+;; You could actually curry these to different machines if you had to, for example if you need to constrain the memory for a particular server, and capacity etc was also changed you could partially save the state of memory as a machine so that all machines being passed in would have some of the same state. TODO: these machines should be getting the machine's memory, etc and then checking against the global defparameter memory or perhaps, some thing scoped to the machine if the machine is a curried function with state?
+(defun has-memory? (machine) (> *memory-constraints* (getf machine 'cpu *memory-constraints*)))
+(defun has-proccessing-capacity? (machine) (> *cpu-constraints* (getf machine 'cpu *cpu-constraints*)))
+(defun has-waiting-thread? (machine) (equal 'WAITING (getf machine 'thread-status 'WAITING)))
+
+(defun check-constriants (machine)
+  (cond
+    ((has-memory? machine) T)
+    ((has-proccessing-capacity? machine) T)
+    ((has-waiting-thread? machine) T)))
+;; If a computer has the memory, and the processing capacity (I think this means that it is ready to process it?)
+
+
+(defmethod (setf daemon-list)
+  ()) ;; filter from the global daemons, a list of daemons that have been pinged/sent orrecieved messages to/from this daemon.
 
 ;; Not sure what i should really be putting here will have to figure
 ;; it out. This looks for other daemons.
-(define-handler (daemon ping) (other-daemon)
-  (send-message 'daemon 'other-daemon)) 
+(define-handler (daemon ping) ()
+  (send-message 'daemon 'other-daemon 'ping :accessor 'daemon-list)) 
 
 (define-handler (daemon spawn) ()
-  (push (make-instance (class-of daemon)) +daemon-list+))
+  (push (make-instance (class-of daemon)) *daemon-list*))
 
 (define-handler (daemon sleep) (tt)
   ()) ;; will do nothing until 
@@ -165,9 +171,9 @@
 ;; (let ((ds (list))) body)
 ;; (let ((ds (list))) (loop ...) ds)
 
-(setf +daemon-list+ (let ((ds (list))) (loop repeat 5
-					    do (push 'test-daemon ds)))
-			  ds)
+;; (setf *daemon-list* (let ((ds (list))) (loop repeat 5
+;; 					     do (push 'test-daemon ds))
+;; 		      ds))
 
 ;; shinmera does stuff with this, not sure will check later.  
 (define-event character-died (event)) 
@@ -197,7 +203,7 @@
 	;; The idea is that this should play the animation for each of the daemons.
 	;; consider dolist as this makes more sense than, `for` because of the lack
 	;; of syntax.
-  (loop for dd in +daemon-list+ do
+  (loop for dd in *daemon-list* do
 	(enter (make-instance 'dd) scene))
     (enter (make-instance 'my-character) scene) 
     (enter (make-instance '2d-camera) scene)
