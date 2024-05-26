@@ -47,50 +47,92 @@
 
 (define-event daemon-died (event))
 
-;; This really will need to be a macro i think because i need to
-;; specify a particular daemon in the daemon pool in order to construct them
-;; dynamically... I think maybe i could use a struct and constructor for them?
-;; daemons should have some initialization standards, for example sometype
-;; of indeterminate location, and resource contraints.
-;; Definining constriants will be difficult. The daemon should also have
-;; a set of base behaviours that are available to take.  
-(define-shader-entity daemon (animated-sprite transformed-entity
-  collision-body listener)
-  (daemon-list :default-initarg 'daemon-list :daemon-list (list)))
 
-(defvar *daemons-list* (list (make-instance 'daemon)))
-(setf +daemons-list+ (list (make-instance 'daemon)))
-;; I need to make sure that there is
+;; gratefull threads :)
+(defstruct dread
+  (id 1 :type integer)
+  (status :waiting :type symbol))
+
+(defparameter *default-threads-state* (list (make-dread :id 1 :status
+							 :waiting)))
+(deftype threads-state () '(dread)) ;; TODO: figure out how to do
+;; to get this working as a more accurate type for threads.
+(defstruct threads (state *default-threads-state* :type list)
+	   (amount (length *default-threads-state*) :type integer :read-only
+	    T))
+(defparameter *default-threads* (make-threads))
+(defclass machine () (
+ 		    (title :initarg :title :initform 'IBM-704
+				    :accessor title)
+		    (speed :initarg :speed :initform 12 :accessor speed) ;; kiloflops
+		    (memory :initarg :memory :initform 18 :accessor
+			    memory)
+		    (threads :initarg :threads :initform
+			     *default-threads* :accessor threads))) ;; Threads are another struct which includes state like whether the threads are busy or not, what they are busy doing like the task/message they are processing, and other stuff like the amount of threads.
+;; (defun make-person (name &key lisper)
+;;   (make-instance 'person :name name :lisper lisper))
+
+(defun make-machine (title memory &key speed threads) (make-instance
+						       'machine :title
+						       title :memory
+						       memory :speed
+						       speed :threads
+						       threads))
+
+;; (defun make-machine () (make-instance 'machine))
+;; would be cool to have different arities but alas this is a dream.
+
+(defparameter *default-machine* (make-instance 'machine))
+
+;; This really will need to be a macro i think because i need to specify a particular daemon in the daemon pool in order to construct them dynamically... I think maybe i could use a struct and constructor for them? daemons should have some initialization standards, for example sometype of indeterminate location, and resource contraints. Definining constriants will be difficult. The daemon should also have a set of base behaviours that are available to take.
+
+(defclass daemon (animated-sprite transformed-entity
+  listener)
+  ((name :initarg :name :initform 'lucifer) ;; TODO: Make it so that
+;; this only happens once. perhaps define that in the function, also
+;; when someone tries to setf name to lucifer, check to see if the
+;; function has been run before and add some nice easter eggs like
+;; 'there can only be one' 'sorry your daemon funds are insufficient'
+;; and other funnny names.
+   (machine :initarg :machine :initform *default-machine* :accessor machine))
+  (:documentation "Daemons are actors that have 'process' messages
+with a processor, they must belong to machines which constrain their behavior."))
+
+(defvar *daemon-list* (list (make-instance 'daemon)))
+
+;; WARNING: you need to make sure that there is
 ;; actually daemon-sprite.json file in the data/.  
-(define-asset (daemonbench sprite) sprite-data #p"daemon-sprite.png")
+(define-asset (daemonbench daemon) sprite-data #p"daemon-sprite.png")
+
 ;; Instead of workbench use a different set of animation to use, make
-;; them importable into the game, check Kandria for how Shinmera deals with
-;; these.Shinmera just says to use play here but I am not sure exactly how
-;; that works. Okay, sorta figured it out, she means to use play instead of
-;; enter. The thing that I need to figure out is more advanced animations. Like
-;; switching-animations. 
+;; them importable into the game, check Kandria for how Shinmera deals
+;; with these.Shinmera just says to use play here but I am not sure
+;; exactly how that works. Okay, sorta figured it out, she means to
+;; use play instead of enter. The thing that I need to figure out is
+;; more advanced animations. Like switching-animations.
+
 
 (define-action-set daemon-set) 
 (define-action dmove
   (directional-action daemon-set)) 
 (define-action ping (daemon-set))
 (define-action spawn (daemon-set))
-
+(define-action sleep (daemon-set))
 
 ;; Test daemon inherits methods of a-daemon
-(define-shader-entity test-daemon (vertex-entity daemon)
-  (:default-initargs 'sprite-data (asset 'daemonbench 'daemon))) 
+(define-shader-entity test-daemon (daemon)
+  ((sprite :initarg :sprite-data :initform (asset 'daemonbench 'daemon)))) 
 
 (defvar *broadcasted-daemons*) ;; broadcasted daemons are ones that are visible to all
 ;; daemons, when you ping you are added to the broadcasted daemons.
 
-;; 
 (defmethod extend-list-with-entry (obj place (accessor daemon))
   (let
       ((accessed (getf place accessor)))
     (push obj accessed)))
 
-;; -> returns bool for it being nil or not, really considering creating the pbool type for real booleans
+;; -> returns bool for it being nil or not, really considering
+;; -> creating the pbool type for real booleans
 (defun nil? (q &optional p &rest args)
   (if (not q)
       (if (not p)
@@ -112,12 +154,20 @@
      (extend-list-with-entry sender sendee accessor)))
   (loop for m in messages do (setf accessor message)))
 
-;; In addition, to adding messages to the daemon-list of the accessor, process-message should also do some work with the messages
-;; i.e. process-message should PARSE the messages and then do actions or behaviours based on them, this may be possible
-;; via a passed in parse function. NOTE: One thing to remember is that send-message and process-message should be given their
-;; accessors otherwise they cannot extend their lists with the extender, WARNING: current implementation will result in infinite recursion.
-;; This function must do resource constraint checking, if resource are out then this should immediately stop.
-;; Another thing to consider, perhaps currying would be useful for this function, it could simplify the amount of code here and preserve a sort of state of messages.
+;; In addition, to adding messages to the daemon-list of the accessor,
+;; process-message should also do some work with the messages
+;; i.e. process-message should PARSE the messages and then do actions
+;; or behaviours based on them, this may be possible
+;; via a passed in parse function. NOTE: One thing to remember is that
+;; send-message and process-message should be given their accessors
+;; otherwise they cannot extend their lists with the extender,
+;; WARNING: current implementation will result in infinite recursion.
+;; This function must do resource constraint checking, if resource are
+;; out then this should immediately stop.
+;; Another thing to consider, perhaps currying would be useful for
+;; this function, it could simplify the amount of code here and
+;; preserve a sort of state of messages.
+
 (defmethod process-message ((accessor daemon) processor &rest messages)
   (loop for message in messages do (processor accessor message)))
 
@@ -127,11 +177,19 @@
 
 
 (defparameter *memory-constraints* 1024) ;; in kb
-(defparameter *cpu-constraints* 2)
-;; You could actually curry these to different machines if you had to, for example if you need to constrain the memory for a particular server, and capacity etc was also changed you could partially save the state of memory as a machine so that all machines being passed in would have some of the same state. TODO: these machines should be getting the machine's memory, etc and then checking against the global defparameter memory or perhaps, some thing scoped to the machine if the machine is a curried function with state?
-(defun has-memory? (machine) (> *memory-constraints* (getf machine 'cpu *memory-constraints*)))
-(defun has-proccessing-capacity? (machine) (> *cpu-constraints* (getf machine 'cpu *cpu-constraints*)))
-(defun has-waiting-thread? (machine) (equal 'WAITING (getf machine 'thread-status 'WAITING)))
+(defparameter *cpu-constraints* 2) ;; maybe this is like time? decaseconds?
+;; You could actually curry these to different machines if you had to,
+;; for example if you need to constrain the memory for a particular
+;; server, and capacity etc was also changed you could partially save
+;; the state of memory as a machine so that all machines being passed
+;; in would have some of the same state. TODO: these machines should
+;; be getting the machine's memory, etc and then checking against the
+;; global defparameter memory or perhaps, some thing scoped to the
+;; machine if the machine is a curried function with state?
+
+(defmethod has-memory? ((machine machine)) (> *memory-constraints* (getf machine 'cpu *memory-constraints*)))
+(defmethod has-proccessing-capacity? ((machine machine)) (> *cpu-constraints* (getf machine 'cpu *cpu-constraints*)))
+(defmethod has-waiting-thread? ((machine machine)) (equal 'WAITING (getf machine 'thread-status 'WAITING)))
 
 (defun check-constriants (machine)
   (cond
@@ -152,7 +210,7 @@
 (define-handler (daemon spawn) ()
   (push (make-instance (class-of daemon)) *daemon-list*))
 
-(define-handler (daemon sleep) (tt)
+(define-handler (daemon sleep) ()
   ()) ;; will do nothing until 
 ;; I need to find a way to add them as part of the scene as they spawn.
 ;; I wonder if adding them to the daemon list is what i should do?
@@ -166,11 +224,6 @@
 
 ;; Daemon list contains all the daemons. I
 ;; was going to use this as a sb-ext:defglobal but this is not known at comptime.
-
-;; (let (bindings*) body)
-;; (let ((ds (list))) body)
-;; (let ((ds (list))) (loop ...) ds)
-
 ;; (setf *daemon-list* (let ((ds (list))) (loop repeat 5
 ;; 					     do (push 'test-daemon ds))
 ;; 		      ds))
@@ -203,8 +256,8 @@
 	;; The idea is that this should play the animation for each of the daemons.
 	;; consider dolist as this makes more sense than, `for` because of the lack
 	;; of syntax.
-  (loop for dd in *daemon-list* do
-	(enter (make-instance 'dd) scene))
+  (loop for dd in *daemon-list*
+	do (enter dd scene))
     (enter (make-instance 'my-character) scene) 
     (enter (make-instance '2d-camera) scene)
   	 ;; Consider using a custom camera that will zoom into particular
