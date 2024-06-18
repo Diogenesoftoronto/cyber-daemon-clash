@@ -3,3 +3,5 @@
 .#*
 .qlot/
 *.fasl
+\#*
+data/

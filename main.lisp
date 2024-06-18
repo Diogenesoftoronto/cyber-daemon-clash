@@ -20,7 +20,7 @@
 ;; examples.
 (define-pool daemonbench) 
 
- 
+
 ;; I just copied the code from trial for the load-keymap function
 ;; the save-keymap function. 
 (defun daemon-path ()
@@ -31,11 +31,11 @@
   (ensure-directories-exist path)
   (cond ((or reset
              (not (probe-file path)) (< (file-write-date path)
-                (file-write-date (merge-pathnames "daemons.lisp"
-                (data-root)))))
+					(file-write-date (merge-pathnames "daemons.lisp"
+									  (data-root)))))
          (load-mapping (merge-pathnames "daemons.lisp" (data-root)))
 	 (when
-         (and (probe-file path) (null reset))
+	     (and (probe-file path) (null reset))
            (load-mapping path))
          (save-daemons :path path))
         (T
@@ -53,22 +53,29 @@
   (id 1 :type integer)
   (status :waiting :type symbol))
 
-(defparameter *default-threads-state* (list (make-dread :id 1 :status
-							 :waiting)))
-(deftype threads-state () '(dread)) ;; TODO: figure out how to do
-;; to get this working as a more accurate type for threads.
+(defparameter *default-threads-state* (list (make-dread)))
+;; TODO: figure out how to do to get this working as a more accurate
+;; type for threads.
+
 (defstruct threads (state *default-threads-state* :type list)
 	   (amount (length *default-threads-state*) :type integer :read-only
 	    T))
+;; TODO: use eval-when for some compile time checking, do not know how to do
+;; that yet
+(defun push-thread (instance thread) (if (dread-p thread)
+					 (push thread (threads-state instance))
+					 (error "You pushed an undreadful
+	   object to the threads state. Shame.")))
+
 (defparameter *default-threads* (make-threads))
 (defclass machine () (
- 		    (title :initarg :title :initform 'IBM-704
-				    :accessor title)
-		    (speed :initarg :speed :initform 12 :accessor speed) ;; kiloflops
-		    (memory :initarg :memory :initform 18 :accessor
-			    memory)
-		    (threads :initarg :threads :initform
-			     *default-threads* :accessor threads))) ;; Threads are another struct which includes state like whether the threads are busy or not, what they are busy doing like the task/message they are processing, and other stuff like the amount of threads.
+		      (title :initarg :title :initform 'IBM-704
+			     :accessor title)
+		      (kflops :initarg :speed :initform 12 :accessor kflops) ;; kiloflops
+		      (memory :initarg :memory :initform 18 :accessor
+			      memory)
+		      (threads :initarg :threads :initform
+			       *default-threads* :accessor threads))) ;; Threads are another struct which includes state like whether the threads are busy or not, what they are busy doing like the task/message they are processing, and other stuff like the amount of threads.
 ;; (defun make-person (name &key lisper)
 ;;   (make-instance 'person :name name :lisper lisper))
 
@@ -86,14 +93,14 @@
 
 ;; This really will need to be a macro i think because i need to specify a particular daemon in the daemon pool in order to construct them dynamically... I think maybe i could use a struct and constructor for them? daemons should have some initialization standards, for example sometype of indeterminate location, and resource contraints. Definining constriants will be difficult. The daemon should also have a set of base behaviours that are available to take.
 
-(defclass daemon (animated-sprite transformed-entity
-  listener)
+(defclass daemon (transformed-entity
+		  listener)
   ((name :initarg :name :initform 'lucifer) ;; TODO: Make it so that
-;; this only happens once. perhaps define that in the function, also
-;; when someone tries to setf name to lucifer, check to see if the
-;; function has been run before and add some nice easter eggs like
-;; 'there can only be one' 'sorry your daemon funds are insufficient'
-;; and other funnny names.
+   ;; this only happens once. perhaps define that in the function, also
+   ;; when someone tries to setf name to lucifer, check to see if the
+   ;; function has been run before and add some nice easter eggs like
+   ;; 'there can only be one' 'sorry your daemon funds are insufficient'
+   ;; and other funnny names.
    (machine :initarg :machine :initform *default-machine* :accessor machine))
   (:documentation "Daemons are actors that have 'process' messages
 with a processor, they must belong to machines which constrain their behavior."))
@@ -117,10 +124,10 @@ with a processor, they must belong to machines which constrain their behavior.")
   (directional-action daemon-set)) 
 (define-action ping (daemon-set))
 (define-action spawn (daemon-set))
-(define-action sleep (daemon-set))
+;; (define-action sleep (daemon-set))
 
 ;; Test daemon inherits methods of a-daemon
-(define-shader-entity test-daemon (daemon)
+(define-shader-entity test-daemon (animated-sprite daemon)
   ((sprite :initarg :sprite-data :initform (asset 'daemonbench 'daemon)))) 
 
 (defvar *broadcasted-daemons*) ;; broadcasted daemons are ones that are visible to all
@@ -138,8 +145,8 @@ with a processor, they must belong to machines which constrain their behavior.")
       (if (not p)
           (loop for (r s) on args by #'cddr
                 always (nil? r s))
-	 T)
-    NIL))
+	  T)
+      NIL))
 
 (defun not-nil? (q &optional p &rest args) (not (nil? q p args)))
 
@@ -149,8 +156,8 @@ with a processor, they must belong to machines which constrain their behavior.")
   (cond
     ((equal message 'ping) ;; condition
      (send-message sendee sender 'pong) ;; action 'clauses'...
-      (extend-list-with-entry sendee sender accessor))  
-     ((equal message 'pong)
+     (extend-list-with-entry sendee sender accessor))  
+    ((equal message 'pong)
      (extend-list-with-entry sender sendee accessor)))
   (loop for m in messages do (setf accessor message)))
 
@@ -173,7 +180,7 @@ with a processor, they must belong to machines which constrain their behavior.")
 
 (defmethod processor ((mutator daemon) message)
   (when (check-constriants mutator)
-  (princ message))) ;; the base processor should print the message 
+    (princ message))) ;; the base processor should print the message 
 
 
 (defparameter *memory-constraints* 1024) ;; in kb
@@ -200,7 +207,7 @@ with a processor, they must belong to machines which constrain their behavior.")
 
 
 (defmethod (setf daemon-list)
-  ()) ;; filter from the global daemons, a list of daemons that have been pinged/sent orrecieved messages to/from this daemon.
+    ()) ;; filter from the global daemons, a list of daemons that have been pinged/sent orrecieved messages to/from this daemon.
 
 ;; Not sure what i should really be putting here will have to figure
 ;; it out. This looks for other daemons.
@@ -210,14 +217,14 @@ with a processor, they must belong to machines which constrain their behavior.")
 (define-handler (daemon spawn) ()
   (push (make-instance (class-of daemon)) *daemon-list*))
 
-(define-handler (daemon sleep) ()
-  ()) ;; will do nothing until 
+;; (define-handler (daemon sleep) ()
+;;   ()) ;; will do nothing until 
 ;; I need to find a way to add them as part of the scene as they spawn.
 ;; I wonder if adding them to the daemon list is what i should do?
 ;; Also I want this to return not just an instance of a-daemon,
 ;; but I want it to be like 'this' when it is called on test-daemon
 ;; for example, I want it to spawn a test daemon and add it to the daemon list.
-   
+
 (define-handler (daemon tick) (tt)
   ;; vx horizontal, vy vertical axis spinning.  
   (setf (orientation daemon) (qfrom-angle +vx+ tt)))
@@ -232,12 +239,11 @@ with a processor, they must belong to machines which constrain their behavior.")
 (define-event character-died (event)) 
 
 (define-shader-entity my-character 
-  (vertex-entity transformed-entity listener)
+    (vertex-entity transformed-entity listener)
   ;; discs are basically circles heh 
   ((vertex-array :initform (// 'trial 'unit-cube))))
 
 (define-handler (my-character tick) (dt)
-
   (let ((movement (directional 'move))
 	(speed 2.5))
     (incf (vx (location my-character)) (* dt speed (- (vx movement))))
@@ -252,20 +258,20 @@ with a processor, they must belong to machines which constrain their behavior.")
 ;; We will define a a method here for setting a scene 
 ;; since we are building a 2d game I have changed to use a 2d camera 
 (defmethod setup-scene
-  ((main main) scene)
-	;; The idea is that this should play the animation for each of the daemons.
-	;; consider dolist as this makes more sense than, `for` because of the lack
-	;; of syntax.
-  (loop for dd in *daemon-list*
-	do (enter dd scene))
-    (enter (make-instance 'my-character) scene) 
-    (enter (make-instance '2d-camera) scene)
-  	 ;; Consider using a custom camera that will zoom into particular
-  	 ;; 'selected' characters or at least focus on them.  
-    (enter (make-instance 'render-pass) scene))
+    ((main main) scene)
+  (enter (make-instance 'my-character) scene) 
+  (enter (make-instance '2d-camera  :location (vec 0 0 -2)) scene)
+  (enter (make-instance 'render-pass) scene))
 
 (setf +app-system+ "cyber-daemon-clash")
+;; Consider using a custom camera that will zoom into particular
+;; 'selected' characters or at least focus on them.  
 
+;; The idea is that this should play the animation for each of the daemons.
+;; consider dolist as this makes more sense than, `for` because of the lack
+;; of syntax.
+;; (loop for dd in *daemon-list*
+;; 	do (enter dd scene))
 ;; This function launches the game, passing arguments or doing things here can
 ;; let you pass values into the game before launch. For example the location
 ;; of assets, or the location of a keymap file, suppose you load specific maps
